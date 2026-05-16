@@ -1,4 +1,17 @@
 ﻿#include <GL/freeglut.h>
+#include <vector>
+#include <string>
+
+// math utilities
+float cubic(float p0, float p1, float p2, float p3, float t) {
+    return 0.0f; // placeholder
+}
+
+// parsing svg
+void parseSvgPath() {
+    // Math to compute shell border points
+}
+
 void init() {
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
 }

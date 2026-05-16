@@ -243,13 +243,133 @@ void initShell() {
     }
 }
 
+void drawShell() {
+    if (gShellSubpaths.empty()) return;
+
+    GLUtesselator* tess = gluNewTess();
+    gluTessCallback(tess, GLU_TESS_BEGIN, (void (CALLBACK*)())&tessBegin);
+    gluTessCallback(tess, GLU_TESS_VERTEX, (void (CALLBACK*)())&tessVertex);
+    gluTessCallback(tess, GLU_TESS_END, (void (CALLBACK*)())&tessEnd);
+    gluTessCallback(tess, GLU_TESS_ERROR, (void (CALLBACK*)())&tessError);
+    gluTessProperty(tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_ODD);
+
+    // 1. Polygon Primitive & Correct Fill Color (Shell Yellow)
+    glEnable(GL_LIGHTING); // Enable lighting for the solid base
+    glColor3f(0.984f, 0.807f, 0.066f);
+    glNormal3f(0.0f, 0.0f, 1.0f); // Provide the normal vector for 3D light reflection
+
+    // Prevent pointer invalidation during tessellation
+    size_t totalVertices = 0;
+    for (const auto& subpath : gShellSubpaths) totalVertices += subpath.size();
+    std::vector<std::vector<GLdouble>> allVertices;
+    allVertices.reserve(totalVertices);
+
+    gluTessBeginPolygon(tess, nullptr);
+    
+    for (const auto& subpath : gShellSubpaths) {
+        size_t startIdx = allVertices.size();
+        for (const auto& p : subpath) {
+            allVertices.push_back({static_cast<GLdouble>(p.x), static_cast<GLdouble>(p.y), 0.0});
+        }
+        
+        gluTessBeginContour(tess);
+        for (size_t i = 0; i < subpath.size(); ++i) {
+            // Note: address of the vertex data is safe because of 'reserve'
+            gluTessVertex(tess, allVertices[startIdx + i].data(), allVertices[startIdx + i].data());
+        }
+        gluTessEndContour(tess);
+    }
+    
+    gluTessEndPolygon(tess);
+    gluDeleteTess(tess);
+
+    // Turn off lighting for the outlines and points so they stay a pure crisp color
+    glDisable(GL_LIGHTING);
+
+    // 2. Lines Primitive & Correct Outline Color (Shell Red)
+    glColor3f(0.866f, 0.113f, 0.129f);
+    glLineWidth(2.0f);
+    for (const auto& subpath : gShellSubpaths) {
+        glBegin(GL_LINE_LOOP);
+        for (const auto& p : subpath) {
+            glVertex2f(p.x, p.y);
+        }
+        glEnd();
+    }
+
+    // 3. Points Primitive (Highlighting vertices for detail)
+    glColor3f(0.866f, 0.113f, 0.129f);
+    glPointSize(3.0f);
+    for (const auto& subpath : gShellSubpaths) {
+        glBegin(GL_POINTS);
+        for (const auto& p : subpath) {
+            glVertex2f(p.x, p.y);
+        }
+        glEnd();
+    }
+}
+
+// Variables for Bonus Feature smooth animation (Transformation: scale and rotate)
+float gAngle = 0.0f;
+float gScaleTime = 0.0f;
+bool gIsAnimating = false;
+
+void keyboard(unsigned char key, int x, int y) {
+    // Toggle animation states based on user input
+    if (key == 'r' || key == 'R') {
+        gIsAnimating = true;
+    } else if (key == 's' || key == 'S') {
+        gIsAnimating = false;
+    }
+}
 
 void display() {
+    // Clear both Color and Depth buffers
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
-    gluLookAt(0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+    
+    // Set up the 3D Camera (eyeX, eyeY, eyeZ, centerX, centerY, centerZ, upX, upY, upZ)
+    gluLookAt(0.0, 0.0, 3.0,  
+              0.0, 0.0, 0.0,  
+              0.0, 1.0, 0.0);
+
+    // Make the light source orbit the shell to show off the glossy reflections
+    GLfloat lightPos[] = { 2.0f * std::cos(gAngle * 3.14159f / 180.0f), 
+                           2.0f * std::sin(gAngle * 3.14159f / 180.0f), 
+                           2.0f, 1.0f }; // Positional light (x,y,z,w=1)
+    glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
+
+    glPushMatrix(); // Save the current state of transformations
+    
+    // Apply 3 Transformations: Translate, Rotate, Scale
+    glTranslatef(0.0f, 0.0f, 0.0f); // Center remains 0,0
+    
+    // Scale gently over time to create a 3D "breathing" effect
+    float currentScale = 1.0f + 0.1f * std::sin(gScaleTime);
+    glScalef(currentScale, currentScale, currentScale); // Scale equally in 3D
+    
+    // 3D Rotations to show off the lighting (tilt and spin)
+    glRotatef(gAngle, 0.0f, 1.0f, 0.0f); // Spin around the Y axis
+    glRotatef(15.0f, 1.0f, 0.0f, 0.0f);  // Permanent 15-degree tilt on the X axis
+
+    drawShell();
+    
+    glPopMatrix(); // Restore the state
     glutSwapBuffers();
+}
+
+void timer(int value) {
+    // Update animation variables
+    if (gIsAnimating) {
+        gAngle += 0.5f; 
+        if (gAngle > 360.0f) gAngle -= 360.0f;
+        gScaleTime += 0.05f;
+    }
+    
+    glutPostRedisplay(); // Request a redraw
+    glutTimerFunc(16, timer, 0); // ~60 FPS
 }
 
 void init() {
@@ -297,7 +417,9 @@ int main(int argc, char** argv) {
 
     init();
     glutDisplayFunc(display);
-        
+    glutKeyboardFunc(keyboard);
+    glutTimerFunc(0, timer, 0); // Start the animation loop
+
     glutMainLoop();
     return 0;
 }

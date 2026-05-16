@@ -297,9 +297,7 @@ int main(int argc, char** argv) {
 
     init();
     glutDisplayFunc(display);
-    glutKeyboardFunc(keyboard);
-    glutTimerFunc(0, timer, 0); // Start the animation loop
-
+        
     glutMainLoop();
     return 0;
 }

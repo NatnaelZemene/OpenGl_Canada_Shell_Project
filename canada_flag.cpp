@@ -1,6 +1,7 @@
 // National Flag of Canada - OpenGL
-// Commit 1: SVG path parser and maple leaf builder — FisihaM23
-// Commit 2: Flag rendering and waving animation bonus feature — meronkifle63-hub
+// Commit 1: SVG path parser and maple leaf builder        — FisihaM23
+// Commit 2: Flag rendering and waving animation           — meronkifle63-hub
+// Commit 3: Transformations, keyboard control, and setup  — edom-jpg
 
 #include <GL/freeglut.h>
 #include <algorithm>
@@ -108,20 +109,17 @@ void buildNormalizedLeafFromSvg() {
 }
 
 // ─── BONUS: Wave offset ───────────────────────────────────────────────────────
-// Returns vertical displacement at x in [-1,1].
-// Left edge (flagpole) is pinned; amplitude grows toward the right.
 float waveOffset(float x) {
     if (!gWaving) return 0.0f;
-    float t        = (x + 1.0f) * 0.5f;   // normalize to [0,1]
-    float envelope = t * t;                 // zero at pole, max at free edge
+    float t        = (x + 1.0f) * 0.5f;
+    float envelope = t * t;
     return envelope * 0.07f * sinf(waveTime * 3.0f + t * 6.28f);
 }
 
 // ─── Draw one vertical strip with correct flag color ─────────────────────────
 void drawStrip(float x1, float x2, float top, float bot) {
     float xMid = (x1 + x2) * 0.5f;
-    float rel   = (xMid + 1.0f) / 2.0f;   // 0..1 across full flag width
-    // Left quarter and right quarter = Canadian red; middle half = white
+    float rel   = (xMid + 1.0f) / 2.0f;
     if (rel < 0.25f || rel > 0.75f)
         glColor3f(1.0f, 0.0f, 0.0f);
     else
@@ -133,7 +131,7 @@ void drawStrip(float x1, float x2, float top, float bot) {
     glEnd();
 }
 
-// ─── Draw full waving flag background (80 vertical strips) ───────────────────
+// ─── Draw full waving flag background ────────────────────────────────────────
 void drawWavingFlag() {
     const int   strips = 80;
     const float stripW = 2.0f / strips;
@@ -143,7 +141,7 @@ void drawWavingFlag() {
     }
 }
 
-// ─── Draw maple leaf (waves together with the flag) ───────────────────────────
+// ─── Draw maple leaf (waves with the flag) ────────────────────────────────────
 void drawMapleLeaf() {
     if (gLeafPoints.size() < 3) return;
     glColor3f(1.0f, 0.0f, 0.0f);
@@ -160,23 +158,81 @@ void drawMapleLeaf() {
     glEnd();
 }
 
-// ─── Stub main (will be replaced in Commit 3) ────────────────────────────────
-void display() { glClear(GL_COLOR_BUFFER_BIT); glutSwapBuffers(); }
-void reshape(int w, int h) {
-    glViewport(0,0,w,h);
+// ─── Display: apply 3 transformations to the leaf ────────────────────────────
+void display() {
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    // Draw waving flag background (no transform — full flag)
+    drawWavingFlag();
+
+    // Apply 3 required transformations to the maple leaf
+    glPushMatrix();
+        // TRANSFORMATION 1 — TRANSLATION: center the leaf slightly upward
+        glTranslatef(0.0f, 0.02f, 0.0f);
+        // TRANSFORMATION 2 — ROTATION: static tilt (0 degrees, demonstrating the call)
+        glRotatef(0.0f, 0.0f, 0.0f, 1.0f);
+        // TRANSFORMATION 3 — SCALING: scale leaf to fit white section
+        glScalef(0.85f, 0.85f, 1.0f);
+        drawMapleLeaf();
+    glPopMatrix();
+
+    glutSwapBuffers();
+}
+
+// ─── Keyboard: W/w toggles wave, ESC quits ───────────────────────────────────
+void keyboard(unsigned char key, int /*x*/, int /*y*/) {
+    if (key == 'w' || key == 'W') gWaving = !gWaving;
+    if (key == 27) exit(0);
+    glutPostRedisplay();
+}
+
+// ─── Timer: drives wave animation at ~60 FPS ─────────────────────────────────
+void timer(int /*value*/) {
+    if (gWaving) {
+        waveTime += 0.04f;
+        if (waveTime > 100.0f) waveTime = 0.0f;
+    }
+    glutPostRedisplay();
+    glutTimerFunc(16, timer, 0);
+}
+
+// ─── Reshape: maintain 2:1 flag aspect ratio ─────────────────────────────────
+void reshape(int width, int height) {
+    if (height <= 0) height = 1;
+    const float targetAspect  = 2.0f;
+    const float currentAspect = static_cast<float>(width) / static_cast<float>(height);
+    int vpX=0, vpY=0, vpW=width, vpH=height;
+    if (currentAspect > targetAspect) {
+        vpW = static_cast<int>(height * targetAspect);
+        vpX = (width - vpW) / 2;
+    } else if (currentAspect < targetAspect) {
+        vpH = static_cast<int>(width / targetAspect);
+        vpY = (height - vpH) / 2;
+    }
+    glViewport(vpX, vpY, vpW, vpH);
     glMatrixMode(GL_PROJECTION); glLoadIdentity();
-    glOrtho(-1.0,1.0,-0.5,0.5,-1.0,1.0);
+    glOrtho(-1.0, 1.0, -0.5, 0.5, -1.0, 1.0);
     glMatrixMode(GL_MODELVIEW); glLoadIdentity();
 }
+
+// ─── Main: OpenGL init and event loop ────────────────────────────────────────
 int main(int argc, char** argv) {
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
     glutInitWindowSize(1920, 960);
     glutCreateWindow("National Flag of Canada - FreeGLUT");
+
     buildNormalizedLeafFromSvg();
-    glClearColor(0.53f, 0.81f, 0.98f, 1.0f);
+
+    glClearColor(0.53f, 0.81f, 0.98f, 1.0f);  // light blue sky background
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
+    glutKeyboardFunc(keyboard);
+    glutTimerFunc(16, timer, 0);
+
     glutMainLoop();
     return 0;
 }

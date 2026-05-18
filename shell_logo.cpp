@@ -1,6 +1,7 @@
 ﻿// Shell Logo - OpenGL
 // Commit 1: SVG path parser and shell geometry builder    — NatnaelZemene
 // Commit 2: Shell rendering with GLU tessellator          — hlinashambel
+// Commit 3: 3D lighting, transformations, animation setup — liduassefa
 
 #include <GL/freeglut.h>
 #include <GL/glu.h>
@@ -35,6 +36,11 @@ struct Point { float x; float y; };
 static std::vector<std::vector<Point>> gShellSubpaths;
 static constexpr int   kCurveSamples = 40;
 static constexpr float kFit          = 1.6f;
+
+// ─── Animation state (Bonus feature) ─────────────────────────────────────────
+float gAngle      = 0.0f;   // Y-axis spin angle
+float gScaleTime  = 0.0f;   // drives breathing scale
+bool  gIsAnimating = false; // R = start, S = stop
 
 // ─── Cubic Bezier ─────────────────────────────────────────────────────────────
 float cubic(float p0, float p1, float p2, float p3, float t) {
@@ -118,7 +124,7 @@ void initShell() {
     }
 }
 
-// ─── Draw shell using GLU tessellator + 3 primitives ─────────────────────────
+// ─── Draw shell: tessellated fill + outline + points ─────────────────────────
 void drawShell() {
     if (gShellSubpaths.empty()) return;
 
@@ -129,61 +135,125 @@ void drawShell() {
     gluTessCallback(tess, GLU_TESS_ERROR,  (void (CALLBACK*)())&tessError);
     gluTessProperty(tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_ODD);
 
-    // Primitive 1: GL_POLYGON (via tessellator) — Shell Yellow fill
-    // Shell brand yellow: RGB (251, 206, 17) → (0.984, 0.807, 0.066)
+    // Primitive 1: filled polygon — Shell Yellow
     glEnable(GL_LIGHTING);
     glColor3f(0.984f, 0.807f, 0.066f);
     glNormal3f(0.0f, 0.0f, 1.0f);
-
-    size_t totalVerts = 0;
-    for (const auto& sp : gShellSubpaths) totalVerts += sp.size();
+    size_t totalVerts=0;
+    for (const auto& sp:gShellSubpaths) totalVerts+=sp.size();
     std::vector<std::vector<GLdouble>> allVerts;
     allVerts.reserve(totalVerts);
-
     gluTessBeginPolygon(tess, nullptr);
-    for (const auto& sp : gShellSubpaths) {
-        size_t startIdx = allVerts.size();
-        for (const auto& p : sp)
-            allVerts.push_back({static_cast<GLdouble>(p.x), static_cast<GLdouble>(p.y), 0.0});
+    for (const auto& sp:gShellSubpaths){
+        size_t startIdx=allVerts.size();
+        for (const auto& p:sp) allVerts.push_back({static_cast<GLdouble>(p.x),static_cast<GLdouble>(p.y),0.0});
         gluTessBeginContour(tess);
-        for (size_t i = 0; i < sp.size(); ++i)
-            gluTessVertex(tess, allVerts[startIdx+i].data(), allVerts[startIdx+i].data());
+        for (size_t i=0;i<sp.size();++i) gluTessVertex(tess,allVerts[startIdx+i].data(),allVerts[startIdx+i].data());
         gluTessEndContour(tess);
     }
     gluTessEndPolygon(tess);
     gluDeleteTess(tess);
-
     glDisable(GL_LIGHTING);
 
     // Primitive 2: GL_LINE_LOOP — Shell Red outline
-    // Shell brand red: RGB (221, 29, 33) → (0.866, 0.113, 0.129)
     glColor3f(0.866f, 0.113f, 0.129f);
     glLineWidth(2.0f);
-    for (const auto& sp : gShellSubpaths) {
-        glBegin(GL_LINE_LOOP);
-        for (const auto& p : sp) glVertex2f(p.x, p.y);
-        glEnd();
-    }
+    for (const auto& sp:gShellSubpaths){ glBegin(GL_LINE_LOOP); for (const auto& p:sp) glVertex2f(p.x,p.y); glEnd(); }
 
-    // Primitive 3: GL_POINTS — highlight vertices
+    // Primitive 3: GL_POINTS — vertex highlights
     glColor3f(0.866f, 0.113f, 0.129f);
     glPointSize(3.0f);
-    for (const auto& sp : gShellSubpaths) {
-        glBegin(GL_POINTS);
-        for (const auto& p : sp) glVertex2f(p.x, p.y);
-        glEnd();
-    }
+    for (const auto& sp:gShellSubpaths){ glBegin(GL_POINTS); for (const auto& p:sp) glVertex2f(p.x,p.y); glEnd(); }
 }
 
-// ─── Stub main (replaced in Commit 3) ────────────────────────────────────────
-void display() { glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT); glutSwapBuffers(); }
+// ─── Keyboard: R = start animation, S = stop ─────────────────────────────────
+void keyboard(unsigned char key, int /*x*/, int /*y*/) {
+    if (key == 'r' || key == 'R') gIsAnimating = true;
+    else if (key == 's' || key == 'S') gIsAnimating = false;
+}
+
+// ─── Display: 3 transformations + orbiting light ─────────────────────────────
+void display() {
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    // 3D camera
+    gluLookAt(0.0, 0.0, 3.0,  0.0, 0.0, 0.0,  0.0, 1.0, 0.0);
+
+    // Orbiting light (bonus: follows the rotation)
+    GLfloat lightPos[] = { 2.0f*std::cos(gAngle*3.14159f/180.0f),
+                           2.0f*std::sin(gAngle*3.14159f/180.0f),
+                           2.0f, 1.0f };
+    glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
+
+    glPushMatrix();
+        // TRANSFORMATION 1 — TRANSLATION: keep shell centered
+        glTranslatef(0.0f, 0.0f, 0.0f);
+        // TRANSFORMATION 2 — SCALE: breathing effect
+        float s = 1.0f + 0.1f * std::sin(gScaleTime);
+        glScalef(s, s, s);
+        // TRANSFORMATION 3 — ROTATE: Y-axis spin + permanent X tilt
+        glRotatef(gAngle, 0.0f, 1.0f, 0.0f);
+        glRotatef(15.0f,  1.0f, 0.0f, 0.0f);
+        drawShell();
+    glPopMatrix();
+
+    glutSwapBuffers();
+}
+
+// ─── Timer: ~60 FPS animation loop ───────────────────────────────────────────
+void timer(int /*value*/) {
+    if (gIsAnimating) {
+        gAngle += 0.5f;
+        if (gAngle > 360.0f) gAngle -= 360.0f;
+        gScaleTime += 0.05f;
+    }
+    glutPostRedisplay();
+    glutTimerFunc(16, timer, 0);
+}
+
+// ─── OpenGL init: lighting, materials, projection ────────────────────────────
+void init() {
+    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+
+    GLfloat ambientLight[]  = { 0.3f, 0.3f, 0.3f, 1.0f };
+    GLfloat diffuseLight[]  = { 0.7f, 0.7f, 0.7f, 1.0f };
+    GLfloat specularLight[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glLightfv(GL_LIGHT0, GL_AMBIENT,  ambientLight);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE,  diffuseLight);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, specularLight);
+
+    GLfloat matSpecular[]  = { 1.0f, 1.0f, 1.0f, 1.0f };
+    GLfloat matShininess[] = { 50.0f };
+    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR,  matSpecular);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, matShininess);
+
+    glEnable(GL_COLOR_MATERIAL);
+    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluPerspective(45.0, 800.0/600.0, 0.1, 100.0);
+
+    initShell();
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
 int main(int argc, char** argv) {
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
     glutInitWindowSize(800, 600);
-    glutCreateWindow("Shell Logo");
-    initShell();
+    glutCreateWindow("Shell Logo - Animation & Transformations");
+
+    init();
     glutDisplayFunc(display);
+    glutKeyboardFunc(keyboard);
+    glutTimerFunc(0, timer, 0);
+
     glutMainLoop();
     return 0;
 }

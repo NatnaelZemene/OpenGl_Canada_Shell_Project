@@ -1,6 +1,6 @@
 // National Flag of Canada - OpenGL
-// Commit 1: SVG path parser and maple leaf builder
-// Author: FisihaM23
+// Commit 1: SVG path parser and maple leaf builder — FisihaM23
+// Commit 2: Flag rendering and waving animation bonus feature — meronkifle63-hub
 
 #include <GL/freeglut.h>
 #include <algorithm>
@@ -21,11 +21,14 @@ static std::vector<std::pair<float, float>> gLeafPoints;
 static constexpr int   kCurveSamples = 14;
 static constexpr float kLeafFit      = 0.86f;
 
+// ─── Wave state (Bonus feature) ───────────────────────────────────────────────
+float waveTime = 0.0f;
+bool  gWaving  = false;   // toggled by W/w key
+
 // ─── Cubic Bezier interpolation ───────────────────────────────────────────────
 float cubic(float p0, float p1, float p2, float p3, float t) {
     const float it = 1.0f - t;
-    return it * it * it * p0 + 3.0f * it * it * t * p1
-         + 3.0f * it * t * t * p2 + t * t * t * p3;
+    return it*it*it*p0 + 3.0f*it*it*t*p1 + 3.0f*it*t*t*p2 + t*t*t*p3;
 }
 
 // ─── SVG parser helpers ───────────────────────────────────────────────────────
@@ -49,92 +52,36 @@ bool readFloat(const std::string& s, size_t& i, float& out) {
     return true;
 }
 
-// ─── Full SVG path parser (M/m L/l H/h V/v C/c Z/z) ─────────────────────────
+// ─── Full SVG path parser ─────────────────────────────────────────────────────
 std::vector<std::vector<Point>> parseSvgPath(const std::string& d) {
     std::vector<std::vector<Point>> subpaths;
     std::vector<Point> current;
-    float cx = 0.0f, cy = 0.0f, sx = 0.0f, sy = 0.0f;
-    char cmd = 0;
-    size_t i = 0;
-
+    float cx=0,cy=0,sx=0,sy=0; char cmd=0; size_t i=0;
     while (i < d.size()) {
-        skipSeparators(d, i);
-        if (i >= d.size()) break;
-        if (std::isalpha(static_cast<unsigned char>(d[i]))) { cmd = d[i++]; }
-        else if (cmd == 0) break;
-
+        skipSeparators(d,i); if (i>=d.size()) break;
+        if (std::isalpha(static_cast<unsigned char>(d[i]))) { cmd=d[i++]; }
+        else if (cmd==0) break;
         switch (cmd) {
             case 'M': case 'm': {
-                float x = 0.0f, y = 0.0f;
-                if (!readFloat(d, i, x) || !readFloat(d, i, y)) break;
+                float x=0,y=0; if (!readFloat(d,i,x)||!readFloat(d,i,y)) break;
                 if (!current.empty()) { subpaths.push_back(current); current.clear(); }
-                if (cmd == 'm') { cx += x; cy += y; } else { cx = x; cy = y; }
-                sx = cx; sy = cy;
-                current.push_back({cx, cy});
-                while (true) {
-                    size_t probe = i; float lx = 0.0f, ly = 0.0f;
-                    if (!readFloat(d, probe, lx) || !readFloat(d, probe, ly)) break;
-                    i = probe;
-                    if (cmd == 'm') { cx += lx; cy += ly; } else { cx = lx; cy = ly; }
-                    current.push_back({cx, cy});
-                }
+                if (cmd=='m'){cx+=x;cy+=y;}else{cx=x;cy=y;} sx=cx;sy=cy;
+                current.push_back({cx,cy});
+                while(true){size_t p=i;float lx=0,ly=0;if(!readFloat(d,p,lx)||!readFloat(d,p,ly))break;i=p;if(cmd=='m'){cx+=lx;cy+=ly;}else{cx=lx;cy=ly;}current.push_back({cx,cy});}
                 break;
             }
-            case 'L': case 'l': {
-                while (true) {
-                    size_t probe = i; float x = 0.0f, y = 0.0f;
-                    if (!readFloat(d, probe, x) || !readFloat(d, probe, y)) break;
-                    i = probe;
-                    if (cmd == 'l') { cx += x; cy += y; } else { cx = x; cy = y; }
-                    current.push_back({cx, cy});
-                }
-                break;
-            }
-            case 'H': case 'h': {
-                while (true) {
-                    size_t probe = i; float x = 0.0f;
-                    if (!readFloat(d, probe, x)) break;
-                    i = probe;
-                    if (cmd == 'h') cx += x; else cx = x;
-                    current.push_back({cx, cy});
-                }
-                break;
-            }
-            case 'V': case 'v': {
-                while (true) {
-                    size_t probe = i; float y = 0.0f;
-                    if (!readFloat(d, probe, y)) break;
-                    i = probe;
-                    if (cmd == 'v') cy += y; else cy = y;
-                    current.push_back({cx, cy});
-                }
-                break;
-            }
+            case 'L': case 'l': { while(true){size_t p=i;float x=0,y=0;if(!readFloat(d,p,x)||!readFloat(d,p,y))break;i=p;if(cmd=='l'){cx+=x;cy+=y;}else{cx=x;cy=y;}current.push_back({cx,cy});} break; }
+            case 'H': case 'h': { while(true){size_t p=i;float x=0;if(!readFloat(d,p,x))break;i=p;if(cmd=='h')cx+=x;else cx=x;current.push_back({cx,cy});} break; }
+            case 'V': case 'v': { while(true){size_t p=i;float y=0;if(!readFloat(d,p,y))break;i=p;if(cmd=='v')cy+=y;else cy=y;current.push_back({cx,cy});} break; }
             case 'C': case 'c': {
-                while (true) {
-                    size_t probe = i;
-                    float x1=0,y1=0,x2=0,y2=0,x=0,y=0;
-                    if (!readFloat(d,probe,x1)||!readFloat(d,probe,y1)||
-                        !readFloat(d,probe,x2)||!readFloat(d,probe,y2)||
-                        !readFloat(d,probe,x) ||!readFloat(d,probe,y)) break;
-                    i = probe;
-                    const float p0x=cx, p0y=cy;
-                    const float p1x=(cmd=='c')?(cx+x1):x1, p1y=(cmd=='c')?(cy+y1):y1;
-                    const float p2x=(cmd=='c')?(cx+x2):x2, p2y=(cmd=='c')?(cy+y2):y2;
-                    const float p3x=(cmd=='c')?(cx+x) :x,  p3y=(cmd=='c')?(cy+y) :y;
-                    for (int step=1; step<=kCurveSamples; ++step) {
-                        const float t = static_cast<float>(step)/static_cast<float>(kCurveSamples);
-                        current.push_back({ cubic(p0x,p1x,p2x,p3x,t), cubic(p0y,p1y,p2y,p3y,t) });
-                    }
-                    cx = p3x; cy = p3y;
-                }
+                while(true){size_t p=i;float x1=0,y1=0,x2=0,y2=0,x=0,y=0;
+                if(!readFloat(d,p,x1)||!readFloat(d,p,y1)||!readFloat(d,p,x2)||!readFloat(d,p,y2)||!readFloat(d,p,x)||!readFloat(d,p,y))break;i=p;
+                float p0x=cx,p0y=cy,p1x=(cmd=='c')?(cx+x1):x1,p1y=(cmd=='c')?(cy+y1):y1,p2x=(cmd=='c')?(cx+x2):x2,p2y=(cmd=='c')?(cy+y2):y2,p3x=(cmd=='c')?(cx+x):x,p3y=(cmd=='c')?(cy+y):y;
+                for(int s=1;s<=kCurveSamples;++s){float t=static_cast<float>(s)/kCurveSamples;current.push_back({cubic(p0x,p1x,p2x,p3x,t),cubic(p0y,p1y,p2y,p3y,t)});}
+                cx=p3x;cy=p3y;}
                 break;
             }
-            case 'Z': case 'z': {
-                if (!current.empty()) { current.push_back({sx,sy}); subpaths.push_back(current); current.clear(); }
-                cx = sx; cy = sy;
-                break;
-            }
+            case 'Z': case 'z': { if(!current.empty()){current.push_back({sx,sy});subpaths.push_back(current);current.clear();}cx=sx;cy=sy; break; }
             default: ++i; break;
         }
     }
@@ -148,27 +95,69 @@ void buildNormalizedLeafFromSvg() {
 
     const std::vector<std::vector<Point>> subpaths = parseSvgPath(kSvgPath);
     if (subpaths.empty()) return;
-
     const auto it = std::max_element(subpaths.begin(), subpaths.end(),
-        [](const std::vector<Point>& a, const std::vector<Point>& b){ return a.size() < b.size(); });
+        [](const std::vector<Point>& a, const std::vector<Point>& b){ return a.size()<b.size(); });
     const std::vector<Point>& leaf = *it;
+    float minX=leaf.front().x,maxX=leaf.front().x,minY=leaf.front().y,maxY=leaf.front().y;
+    for (const Point& p:leaf){minX=std::min(minX,p.x);maxX=std::max(maxX,p.x);minY=std::min(minY,p.y);maxY=std::max(maxY,p.y);}
+    const float srcW=std::max(1e-6f,maxX-minX),srcH=std::max(1e-6f,maxY-minY);
+    const float srcCX=0.5f*(minX+maxX),srcCY=0.5f*(minY+maxY);
+    const float scale=std::min(kLeafFit/srcW,kLeafFit/srcH);
+    gLeafPoints.clear(); gLeafPoints.reserve(leaf.size());
+    for (const Point& p:leaf) gLeafPoints.push_back({(p.x-srcCX)*scale,-(p.y-srcCY)*scale});
+}
 
-    float minX=leaf.front().x, maxX=leaf.front().x;
-    float minY=leaf.front().y, maxY=leaf.front().y;
-    for (const Point& p : leaf) {
-        minX=std::min(minX,p.x); maxX=std::max(maxX,p.x);
-        minY=std::min(minY,p.y); maxY=std::max(maxY,p.y);
+// ─── BONUS: Wave offset ───────────────────────────────────────────────────────
+// Returns vertical displacement at x in [-1,1].
+// Left edge (flagpole) is pinned; amplitude grows toward the right.
+float waveOffset(float x) {
+    if (!gWaving) return 0.0f;
+    float t        = (x + 1.0f) * 0.5f;   // normalize to [0,1]
+    float envelope = t * t;                 // zero at pole, max at free edge
+    return envelope * 0.07f * sinf(waveTime * 3.0f + t * 6.28f);
+}
+
+// ─── Draw one vertical strip with correct flag color ─────────────────────────
+void drawStrip(float x1, float x2, float top, float bot) {
+    float xMid = (x1 + x2) * 0.5f;
+    float rel   = (xMid + 1.0f) / 2.0f;   // 0..1 across full flag width
+    // Left quarter and right quarter = Canadian red; middle half = white
+    if (rel < 0.25f || rel > 0.75f)
+        glColor3f(1.0f, 0.0f, 0.0f);
+    else
+        glColor3f(1.0f, 1.0f, 1.0f);
+    float o1 = waveOffset(x1), o2 = waveOffset(x2);
+    glBegin(GL_QUADS);
+        glVertex2f(x1, top+o1); glVertex2f(x2, top+o2);
+        glVertex2f(x2, bot+o2); glVertex2f(x1, bot+o1);
+    glEnd();
+}
+
+// ─── Draw full waving flag background (80 vertical strips) ───────────────────
+void drawWavingFlag() {
+    const int   strips = 80;
+    const float stripW = 2.0f / strips;
+    for (int i = 0; i < strips; i++) {
+        float x1 = -1.0f + i * stripW;
+        drawStrip(x1, x1 + stripW, 0.5f, -0.5f);
     }
-    const float srcW  = std::max(1e-6f, maxX-minX);
-    const float srcH  = std::max(1e-6f, maxY-minY);
-    const float srcCX = 0.5f*(minX+maxX);
-    const float srcCY = 0.5f*(minY+maxY);
-    const float scale = std::min(kLeafFit/srcW, kLeafFit/srcH);
+}
 
-    gLeafPoints.clear();
-    gLeafPoints.reserve(leaf.size());
-    for (const Point& p : leaf)
-        gLeafPoints.push_back({ (p.x-srcCX)*scale, -(p.y-srcCY)*scale });
+// ─── Draw maple leaf (waves together with the flag) ───────────────────────────
+void drawMapleLeaf() {
+    if (gLeafPoints.size() < 3) return;
+    glColor3f(1.0f, 0.0f, 0.0f);
+    glBegin(GL_TRIANGLE_FAN);
+        float co = waveOffset(0.0f);
+        glVertex2f(0.0f, co);
+        for (const auto& p : gLeafPoints) {
+            float vo = waveOffset(p.first * 0.5f);
+            glVertex2f(p.first, p.second + co + (vo - co) * 0.5f);
+        }
+        float vo0 = waveOffset(gLeafPoints.front().first * 0.5f);
+        glVertex2f(gLeafPoints.front().first,
+                   gLeafPoints.front().second + co + (vo0 - co) * 0.5f);
+    glEnd();
 }
 
 // ─── Stub main (will be replaced in Commit 3) ────────────────────────────────

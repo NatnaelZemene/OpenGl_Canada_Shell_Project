@@ -1,0 +1,10 @@
+# Compiled binaries
+*.exe
+*.dll
+*.o
+*.a
+*.tmp
+
+# Build artifacts
+*.obj
+*.pdb

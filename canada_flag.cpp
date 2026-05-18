@@ -22,6 +22,19 @@ static constexpr float kLeafFit = 0.86f;
 float waveTime    = 0.0f;
 bool  gWaving     = false;  // toggled by W/w key
 
+// ============================================================
+//  NEW: Flag pan, leaf rotation, leaf scale
+// ============================================================
+float gFlagOffsetX  = 0.0f;   // arrow-key panning
+float gFlagOffsetY  = 0.0f;
+float gLeafRotation = 0.0f;   // R key — cumulative degrees
+float gLeafScale    = 1.0f;   // +/- keys
+
+static constexpr float kPanStep   = 0.05f;
+static constexpr float kRotStep   = 5.0f;
+static constexpr float kScaleStep = 0.05f;
+// ============================================================
+
 float cubic(float p0, float p1, float p2, float p3, float t) {
     const float it = 1.0f - t;
     return it * it * it * p0 + 3.0f * it * it * t * p1 + 3.0f * it * t * t * p2 + t * t * t * p3;
@@ -294,35 +307,24 @@ void buildNormalizedLeafFromSvg() {
     }
 }
 
-// ============================================================
-//  BONUS: Waving flag
-//  Splits the flag into 60 VERTICAL strips (left to right).
-//  Each strip is displaced UP/DOWN by a sine wave.
-//  Left edge (flagpole) is pinned — amplitude grows to the right.
-//  The leaf is drawn inside the same wave so everything moves together.
-// ============================================================
-
 // Returns the vertical wave offset at a given x position [-1, 1]
+// The x here is in the local flag coordinate space (before pan is applied).
 float waveOffset(float x) {
     if (!gWaving) return 0.0f;
-    // Normalize x to [0,1]: 0 = flagpole (left), 1 = free edge (right)
     float t = (x + 1.0f) * 0.5f;
-    // Envelope: zero at pole, grows toward free edge
     float envelope = t * t;
     return envelope * 0.07f * sin(waveTime * 3.0f + t * 6.28f);
 }
 
 // Draw one vertical strip of the flag with correct colors
-// x1..x2 is the strip's x range; top/bot are the base y edges
 void drawStrip(float x1, float x2, float top, float bot) {
     float xMid = (x1 + x2) * 0.5f;
 
-    // Color: left third = red, middle third = white, right third = red
-    float rel = (xMid + 1.0f) / 2.0f;  // 0..1 across full flag
+    float rel = (xMid + 1.0f) / 2.0f;
     if (rel < 0.25f || rel > 0.75f)
-        glColor3f(1.0f, 0.0f, 0.0f);   // Canadian red
+        glColor3f(1.0f, 0.0f, 0.0f);
     else
-        glColor3f(1.0f, 1.0f, 1.0f);   // white
+        glColor3f(1.0f, 1.0f, 1.0f);
 
     float o1 = waveOffset(x1);
     float o2 = waveOffset(x2);
@@ -337,7 +339,7 @@ void drawStrip(float x1, float x2, float top, float bot) {
 
 void drawWavingFlag() {
     int   strips = 80;
-    float stripW = 2.0f / strips;   // flag spans x = [-1, 1]
+    float stripW = 2.0f / strips;
     for (int i = 0; i < strips; i++) {
         float x1 = -1.0f + i * stripW;
         float x2 = x1 + stripW;
@@ -350,12 +352,10 @@ void drawMapleLeaf() {
 
     glColor3f(1.0f, 0.0f, 0.0f);
     glBegin(GL_TRIANGLE_FAN);
-        // Center of leaf is at x=0; apply wave offset there
         float centerOffset = waveOffset(0.0f);
         glVertex2f(0.0f, centerOffset);
         for (const auto& p : gLeafPoints) {
-            // Each leaf vertex gets the wave offset at its x position
-            float vo = waveOffset(p.first * 0.5f);  // scale x since leaf is smaller
+            float vo = waveOffset(p.first * 0.5f);
             glVertex2f(p.first, p.second + centerOffset + (vo - centerOffset) * 0.5f);
         }
         {
@@ -372,28 +372,60 @@ void display() {
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    // Draw the full waving flag (background + leaf together, no separate transforms)
-    drawWavingFlag();
-
-    // 3 required transformations applied to the leaf
+    // ── Pan the entire flag (background strips + leaf) together ──
     glPushMatrix();
-        // TRANSFORMATION 1 - TRANSLATION
-        glTranslatef(0.0f, 0.02f, 0.0f);
-        // TRANSFORMATION 2 - ROTATION (static tilt, not spinning)
-        glRotatef(0.0f, 0.0f, 0.0f, 1.0f);
-        // TRANSFORMATION 3 - SCALING
-        glScalef(0.85f, 0.85f, 1.0f);
-        drawMapleLeaf();
+        glTranslatef(gFlagOffsetX, gFlagOffsetY, 0.0f);
+
+        // Draw flag background strips
+        drawWavingFlag();
+
+        // Draw leaf with its own additional transforms on top of the pan
+        glPushMatrix();
+            // TRANSFORMATION 1 - TRANSLATION (slight upward nudge)
+            glTranslatef(0.0f, 0.02f, 0.0f);
+            // TRANSFORMATION 2 - ROTATION (R key controlled)
+            glRotatef(gLeafRotation, 0.0f, 0.0f, 1.0f);
+            // TRANSFORMATION 3 - SCALING (+/- key controlled)
+            glScalef(gLeafScale * 0.85f, gLeafScale * 0.85f, 1.0f);
+            drawMapleLeaf();
+        glPopMatrix();
+
     glPopMatrix();
 
     glutSwapBuffers();
 }
 
+// ── Regular keys: W=wave, R=rotate, +/-=scale, ESC=quit ──
 void keyboard(unsigned char key, int /*x*/, int /*y*/) {
-    if (key == 'w' || key == 'W') {
-        gWaving = !gWaving;   // toggle wave on/off
+    switch (key) {
+        case 'w': case 'W':
+            gWaving = !gWaving;
+            break;
+        case 'r': case 'R':
+            gLeafRotation += kRotStep;
+            if (gLeafRotation >= 360.0f) gLeafRotation -= 360.0f;
+            break;
+        case '+': case '=':   // '=' so it works without Shift too
+            gLeafScale += kScaleStep;
+            break;
+        case '-': case '_':
+            gLeafScale -= kScaleStep;
+            if (gLeafScale < 0.05f) gLeafScale = 0.05f;   // minimum size guard
+            break;
+        case 27:              // ESC
+            exit(0);
     }
-    if (key == 27) exit(0);   // ESC to quit
+    glutPostRedisplay();
+}
+
+// ── Special keys: arrow keys pan the whole flag ──
+void specialKey(int key, int /*x*/, int /*y*/) {
+    switch (key) {
+        case GLUT_KEY_LEFT:  gFlagOffsetX -= kPanStep; break;
+        case GLUT_KEY_RIGHT: gFlagOffsetX += kPanStep; break;
+        case GLUT_KEY_UP:    gFlagOffsetY += kPanStep; break;
+        case GLUT_KEY_DOWN:  gFlagOffsetY -= kPanStep; break;
+    }
     glutPostRedisplay();
 }
 
@@ -443,11 +475,12 @@ int main(int argc, char** argv) {
 
     buildNormalizedLeafFromSvg();
 
-    glClearColor(0.53f, 0.81f, 0.98f, 1.0f);  // light blue sky background
+    glClearColor(0.53f, 0.81f, 0.98f, 1.0f);
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
     glutKeyboardFunc(keyboard);
-    glutTimerFunc(16, timer, 0);  // start wave animation
+    glutSpecialFunc(specialKey);    // ← registers arrow-key handler
+    glutTimerFunc(16, timer, 0);
 
     glutMainLoop();
     return 0;

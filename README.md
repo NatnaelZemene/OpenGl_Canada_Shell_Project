@@ -121,8 +121,12 @@ g++ shell_logo.cpp -o shell_logo.exe -I./include -L./lib -lfreeglut -lopengl32 -
 ### Canada Flag
 | Key | Action |
 |---|---|
-| W | Toggle wind wave animation on/off |
-| ESC | Quit |
+| `W` | Toggle wind wave animation on/off |
+| `R` | Toggle maple leaf auto-spin (rotation) |
+| `+` / `=` | Scale the maple leaf up |
+| `-` | Scale the maple leaf down |
+| `←` `→` `↑` `↓` | Translate (move) the entire flag |
+| `ESC` | Quit |
 
 ### Shell Logo
 | Key | Action |
@@ -218,10 +222,10 @@ the assigned flag/logo accurately, and accuracy demanded these tools.
 |---|---|---|
 | Basic primitives | GL_QUADS, GL_TRIANGLE_FAN | GL_POLYGON (tessellated), GL_LINE_LOOP, GL_POINTS |
 | Color handling (RGB) | Canadian Red (1.0, 0.0, 0.0), White | Shell Yellow (0.984, 0.807, 0.066), Shell Red (0.866, 0.113, 0.129) |
-| At least 3 transformations | Translate, Rotate, Scale on leaf | Translate, Scale (breathing), Rotate (Y-axis + X-tilt) |
+| At least 3 transformations | Translate (arrow keys), Rotate (R key), Scale (+/- keys) on leaf | Translate, Scale (breathing), Rotate (Y-axis + X-tilt) |
 | Correct real-world colors | Official Canadian flag specification | Official Shell brand color guidelines |
 | Working OpenGL program | Yes | Yes |
-| Bonus feature | Wind wave animation (W key) | Orbiting light + 3D animation (R key) |
+| Bonus feature | Wind wave animation (W key) + interactive transforms (arrow keys, R, +/-) | Orbiting light + 3D animation (R key) |
 
 ---
 

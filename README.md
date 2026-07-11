@@ -12,7 +12,7 @@
 |---|---|---|---|
 | Meron Kifle | GUR/01196/16 | meronkifle63-hub | Canada Flag — Rendering & Wave Animation |
 | Natnael Zemene | GUR/02204/16 | NatnaelZemene | Shell Logo — SVG Parser & Geometry Builder |
-| Hilina Shambel | GUR/01604/16 | hlinashambel | Shell Logo — GLU Tessellator & Primitives |
+| Hlina Shambel | GUR/01604/16 | hlinashambel | Shell Logo — GLU Tessellator & Primitives |
 | Lidiya Assefa | GUR/02780/16 | liduassefa | Shell Logo — 3D Lighting, Transformations & Setup |
 | Eden Shewaye | GUR/01134/16 | edom-jpg | Canada Flag — Transformations, Keyboard & Setup |
 | Mulugeta Fissiha | GUR/01919/16 | FisihaM23 | Canada Flag — SVG Parser & Leaf Builder |
